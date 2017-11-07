@@ -5,13 +5,14 @@
 
 # platform-http-cache
 
-Default HTTP cache handling for [eZ Platform][ezplatform].
+As of 1.12 default HTTP cache handling for [eZ Platform][ezplatform], and unlike the one bundled in [ezpublish-kernel][ezpublish-kernel]
+and now deprecated, it centers on the use of (multi) cache tagging across Symfony Proxy _(using enhanced data store)_,
+Varnish _(using [xkey][Varnish-xkey])_ and Fastly _(available for eZ Platform Cloud Enterprise users as of 1.13LTS)_.
 
-This package externalizes the HTTP cache handling of [ezpublish-kernel][ezpublish-kernel].
-It is by default installed with ezplatform 1.8, and has been enabled in the `AppKernel` from 1.12.
+It has been bundled with ezplatform since 1.8, and has been enabled by default since 1.12.
 
-## Enabling the package
-Add the package to `app/AppKernel.php`, *before* the EzPublishCoreBundle declaration:
+## Enabling the package on versions prior to 1.12
+1. Add the package to `app/AppKernel.php`, *before* `EzPublishCoreBundle`, but after `FOSHttpCacheBundle`:
 
 ```php
     public function registerBundles()
@@ -25,26 +26,11 @@ Add the package to `app/AppKernel.php`, *before* the EzPublishCoreBundle declara
         );
 ```
 
-The package will replace the services from the kernel, thus enabling the new features, such as multi-tagging.
+The package will replace several services from the kernel, thus enabling the new features, such as multi-tagging.
 
-The application cache class needs to be customized. If you haven't changed the `AppCache` class, you can do so
-by setting the `SYMFONY_HTTP_CACHE_CLASS` environment variable for your PHP or web server user.
-If you use your own `AppCache` class, you will have to make it to extend from this class instead
-of from the CoreBundle's.
+2. The application cache class needs to be customized. This is done by modifying `AppCache` class, you will have to make
+it extend `EzSystems\PlatformHttpCacheBundle\AppCache`.
 
-For PHP's internal server you can set it as shell environment variable before starting server:
-
-    export SYMFONY_HTTP_CACHE_CLASS='EzSystems\PlatformHttpCacheBundle\AppCache'
-
-For Apache, with the default eZ Platform virtual host definition, uncomment the `SetEnv` lines for the two
-variables above in your virtualhost, and set the values accordingly:
-
-    SetEnv SYMFONY_HTTP_CACHE_CLASS 'EzSystems\PlatformHttpCacheBundle\AppCache'
-
-For Nginx, set the variables using `fastcgi_param`:
-
-    fastcgi_param SYMFONY_HTTP_CACHE_CLASS "EzSystems\PlatformHttpCacheBundle\AppCache";
-    
 Do not forget to restart your web server.
 
 ## Usage with Varnish
@@ -81,5 +67,56 @@ Responses from `/content/view` will be made cachable, and the shared max age wil
 ### Purging of tagged HTTP cache on Repository operations
 A set of Slots will send HTTP PURGE requests for each cache tag affected by write operations. 
 
+
+## Configuration
+
+### Plugins
+
+This bundle lets you configure plugins for handling http cache, the following exists from eZ:
+- `local`: extended Symfony Proxy to support tagging and varying by user rights _(available in this bundle)_
+- `http` aka `varnish`: Varnish proxy using and customizing FosHttpCache for purging _(available in this bundle)_
+- `fastly`: Fastly CDN proxy _(available with eZ Platform Enterprise and documented separately)_
+
+
+Configuring these is done using global `ezpublish.http_cache.purge_type` config, by default it is set as:
+```yml
+ezpublish:
+    http_cache:
+        purge_type: local
+```
+
+
+### Params
+
+```yml
+    # Path for Symfony Proxy `local` cache path.
+    ezplatform.http_cache.store.root: "%kernel.cache_dir%/http_cache"
+
+    # Config for the tags header to use, normally automatically overridden if needed by plugins.
+    ezplatform.http_cache.tags.header: 'xkey'
+
+    # In case VCL is altered to use different purge header, then the default "key".
+    ezplatform.http_cache.varnish.purge_header: 'key'
+
+    # For use when running with varnish modules 0.9.x which does not support purging by several tags per purge call.
+    ezplatform.http_cache.varnish.one_purge_per_tag: false
+```
+
+
+### Tags
+
+- ezplatform.http_cache.purge_client
+
+// TagHandler is responsible for setting correct tags (recognized by the http cache) on responses
+ezplatform.http_cache.tag_handler
+
+
+// FOS TagHandler is making sure running "php app/console fos:httpcache:invalidate:tag <tag>" works
+ezplatform.http_cache.fos_tag_handler
+
+ezplatform.cache_response_tagger
+
+
 [ezplatform]: http://github.com/ezsystems/ezplatform
 [ezpublish-kernel]: http://github.com/ezsystems/ezpubish-kernel
+[Varnish-xkey]: https://github.com/varnish/varnish-modules/blob/master/docs/vmod_xkey.rst
